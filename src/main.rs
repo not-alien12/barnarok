@@ -29,6 +29,11 @@ fn main()
                 Ok(board) =>
                 {
                     board.display();
+                    println!("possible pawn moves: {}", board.get_legal_moves().len());
+                    for (i, m) in board.get_legal_moves().iter().enumerate()
+                    {
+                        println!("{}: {:?}", i + 1, m);
+                    }
                 },
                 Err(err) => eprint!("{}", err),
             }
