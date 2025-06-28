@@ -24,9 +24,14 @@ fn main()
     {
         Commands::Run =>
         {
-            let piece: Piece = ROOK | WHITE;
-            println!("type: {}", get_piece_type(piece));
-            println!("color: {}", get_piece_color(piece));
+            match Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -")
+            {
+                Ok(board) =>
+                {
+                    board.display();
+                },
+                Err(err) => eprint!("{}", err),
+            }
         },
     }
 }
