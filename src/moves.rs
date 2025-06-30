@@ -11,13 +11,86 @@ pub fn get_legal_moves(board: &Board) -> Vec<Move>
     let mut rook_moves = generate_rook_moves_hq(board);
     let mut bishop_moves = generate_bishop_moves_hq(board);
     let mut queen_moves = generate_queen_moves_hq(board);
+    let mut knight_moves = generate_knight_moves(board);
+    let mut king_moves = generate_king_moves(board);
 
     all_moves.append(&mut pawn_moves);
     all_moves.append(&mut rook_moves);
     all_moves.append(&mut bishop_moves);
     all_moves.append(&mut queen_moves);
+    all_moves.append(&mut knight_moves);
+    all_moves.append(&mut king_moves);
 
     return all_moves;
+}
+
+// Create a vector containing moves that knights can make.
+pub fn generate_knight_moves(board: &Board) -> Vec<Move>
+{
+    let mut moves = vec![];
+
+    // Get relevant bitboards.
+    let friendly = if board.white_to_play { board.white_pieces } else { board.black_pieces };
+    let knights = if board.white_to_play { board.white_knights } else { board.black_knights };
+
+    // Loop over friendly knights.
+    let mut bits = knights;
+    while bits != 0
+    {
+        // Get the square index of the next knight.
+        let from = bits.trailing_zeros() as usize;
+        bits &= bits - 1;
+
+        // Get pseudo-legal moves.
+        let pl_moves_bb = knight_mask(from);
+
+        // Forbid capture of friendly pieces.
+        let moves_bb = pl_moves_bb & !friendly;
+
+        // Add a move for each target square.
+        let mut t = moves_bb;
+        while t != 0
+        {
+            // Get the target square index.
+            let to = t.trailing_zeros() as usize;
+            // Add the move.
+            moves.push(Move { start: from, end: to });
+            t &= t - 1;
+        }
+    }
+
+    return moves;
+}
+
+// Create a vector containing moves that the king can make.
+pub fn generate_king_moves(board: &Board) -> Vec<Move>
+{
+    let mut moves = vec![];
+
+    // Get the relevant bitboard.
+    let friendly = if board.white_to_play { board.white_pieces } else { board.black_pieces };
+
+    // Get the starting position of the king.
+    let from = if board.white_to_play { board.white_king } else { board.black_king };
+
+    // Get pseudo-legal moves.
+    let pl_moves_bb = king_mask(from);
+
+    // Forbid capture of friendly pieces.
+    let moves_bb = pl_moves_bb & !friendly;
+
+    // Add a move for each target square.
+    let mut t = moves_bb;
+    while t != 0
+    {
+        // Get the target square index.
+        let to = t.trailing_zeros() as usize;
+        // Add the move.
+        moves.push(Move { start: from, end: to });
+        t &= t - 1;
+    }
+
+    return moves;
 }
 
 // Use Hyperbola-Quintessence to get the mask of squares that a sliding piece can get to.
@@ -36,12 +109,12 @@ fn slider_attacks_hq(sq: usize, occ: u64, mask: u64) -> u64
     // wanted axis).
     // Subtract this new mask to the occupancy mask to get a mask containing squares that the piece
     // can get to following this axis going to the 'right', up to the first blocking piece.
-    let forward = occ_masked.wrapping_sub(2 * bit);
+    let forward = occ_masked.wrapping_sub(bit << 1);
 
     // Repeat the operation with reversed masks, to get the squares accessible by going to the left.
     let rev_masked = occ_masked.reverse_bits();
     let rev_bit = bit.reverse_bits();
-    let reverse = rev_masked.wrapping_sub(2 * rev_bit).reverse_bits();
+    let reverse = rev_masked.wrapping_sub(rev_bit << 1).reverse_bits();
 
     // Apply the XOR operation to the 2 masks (left & right), to get the attack positions in both
     // directions. We use XOR and not OR, to take out the sliding piece position.
