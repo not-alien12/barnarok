@@ -1,5 +1,65 @@
 use crate::Bitboard;
 
+// Arrays containing precomputed masks.
+const RANK_MASKS: [Bitboard; 64] = make_rank_masks();
+const FILE_MASKS: [Bitboard; 64] = make_file_masks();
+const ANTIDIAGONAL_MASKS: [Bitboard; 64] = make_antidiagonal_masks();
+const DIAGONAL_MASKS: [Bitboard; 64] = make_diagonal_masks();
+const KNIGHT_MASKS: [Bitboard; 64] = make_knight_masks();
+const KING_MASKS: [Bitboard; 64] = make_king_masks();
+const WHITE_KING_PAWN_MASKS: [Bitboard; 64] = make_white_king_pawn_masks();
+const BLACK_KING_PAWN_MASKS: [Bitboard; 64] = make_black_king_pawn_masks();
+
+// Getters for precomputed masks:
+
+#[inline(always)]
+pub fn rank_mask(sq: usize) -> Bitboard
+{
+    return RANK_MASKS[sq];
+}
+
+#[inline(always)]
+pub fn file_mask(sq: usize) -> Bitboard
+{
+    return FILE_MASKS[sq];
+}
+
+#[inline(always)]
+pub fn antidiagonal_mask(sq: usize) -> Bitboard
+{
+    return ANTIDIAGONAL_MASKS[sq];
+}
+
+#[inline(always)]
+pub fn diagonal_mask(sq: usize) -> Bitboard
+{
+    return DIAGONAL_MASKS[sq];
+}
+
+#[inline(always)]
+pub fn knight_mask(sq: usize) -> Bitboard
+{
+    return KNIGHT_MASKS[sq];
+}
+
+#[inline(always)]
+pub fn king_mask(sq: usize) -> Bitboard
+{
+    return KING_MASKS[sq];
+}
+
+#[inline(always)]
+pub fn white_king_pawn_mask(sq: usize) -> Bitboard
+{
+    return WHITE_KING_PAWN_MASKS[sq];
+}
+
+#[inline(always)]
+pub fn black_king_pawn_mask(sq: usize) -> Bitboard
+{
+    return BLACK_KING_PAWN_MASKS[sq];
+}
+
 const fn make_rank_masks() -> [Bitboard; 64]
 {
     // Create a mask representing all squares on the same rank as 'sq'.
@@ -146,7 +206,7 @@ const fn make_knight_masks() -> [Bitboard; 64]
 
         let mut m = 0u64;
 
-        if file > 2
+        if file > 1
         {
             if rank > 1
             {
@@ -157,7 +217,7 @@ const fn make_knight_masks() -> [Bitboard; 64]
                 m |= 1u64 << (sq + 6);
             }
         }
-        if file > 1
+        if file > 0
         {
             if rank > 2
             {
@@ -262,48 +322,74 @@ const fn make_king_masks() -> [Bitboard; 64]
     return masks;
 }
 
-// Arrays containing precomputed masks.
-const RANK_MASKS: [Bitboard; 64] = make_rank_masks();
-const FILE_MASKS: [Bitboard; 64] = make_file_masks();
-const ANTIDIAGONAL_MASKS: [Bitboard; 64] = make_antidiagonal_masks();
-const DIAGONAL_MASKS: [Bitboard; 64] = make_diagonal_masks();
-const KNIGHT_MASKS: [Bitboard; 64] = make_knight_masks();
-const KING_MASKS: [Bitboard; 64] = make_king_masks();
-
-// Getters for precomputed masks:
-
-#[inline(always)]
-pub fn rank_mask(sq: usize) -> Bitboard
+const fn make_white_king_pawn_masks() -> [Bitboard; 64]
 {
-    return RANK_MASKS[sq];
+    // Create a mask representing all squares that white king could be attacked from.
+    const fn create_mask(sq: usize) -> Bitboard
+    {
+        let file = (sq % 8) as isize; // File of sq.
+        let rank = (sq / 8) as isize; // Rank of sq.
+
+        let mut m = 0u64;
+
+        if rank < 7
+        {
+            if file > 0
+            {
+                m |= 1u64 << (sq + 7);
+            }
+            if file < 7
+            {
+                m |= 1u64 << (sq + 9);
+            }
+        }
+
+        return m;
+    }
+
+    // Use the helper to fill the array with masks.
+    let mut masks = [0u64; 64];
+    let mut i = 0;
+    while i < 64
+    {
+        masks[i] = create_mask(i);
+        i += 1;
+    }
+    return masks;
 }
 
-#[inline(always)]
-pub fn file_mask(sq: usize) -> Bitboard
+const fn make_black_king_pawn_masks() -> [Bitboard; 64]
 {
-    return FILE_MASKS[sq];
-}
+    // Create a mask representing all squares that black king could be attacked from.
+    const fn create_mask(sq: usize) -> Bitboard
+    {
+        let file = (sq % 8) as isize; // File of sq.
+        let rank = (sq / 8) as isize; // Rank of sq.
 
-#[inline(always)]
-pub fn antidiagonal_mask(sq: usize) -> Bitboard
-{
-    return ANTIDIAGONAL_MASKS[sq];
-}
+        let mut m = 0u64;
 
-#[inline(always)]
-pub fn diagonal_mask(sq: usize) -> Bitboard
-{
-    return DIAGONAL_MASKS[sq];
-}
+        if rank > 0
+        {
+            if file > 0
+            {
+                m |= 1u64 << (sq - 9);
+            }
+            if file < 7
+            {
+                m |= 1u64 << (sq - 7);
+            }
+        }
 
-#[inline(always)]
-pub fn knight_mask(sq: usize) -> Bitboard
-{
-    return KNIGHT_MASKS[sq];
-}
+        return m;
+    }
 
-#[inline(always)]
-pub fn king_mask(sq: usize) -> Bitboard
-{
-    return KING_MASKS[sq];
+    // Use the helper to fill the array with masks.
+    let mut masks = [0u64; 64];
+    let mut i = 0;
+    while i < 64
+    {
+        masks[i] = create_mask(i);
+        i += 1;
+    }
+    return masks;
 }

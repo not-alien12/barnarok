@@ -1,4 +1,5 @@
 use super::moves::get_legal_moves;
+use crate::get_attacked_squares;
 
 pub type Piece = u8;
 
@@ -30,13 +31,27 @@ pub const fn get_piece_color(piece: Piece) -> Piece
 // An Index represents a tile on the board.
 pub type Index = usize;
 
+// Enum to add context to a special move.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum MoveContext
+{
+    None,
+    EnPassant,
+    QueenSideCastle,
+    KingSideCastle,
+    DoubleStep,
+    Capture(Piece),
+}
+
 // A move consists of a start tile and an end tile.
 // I might need to add more fields when I start using it.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Move
 {
     pub start: Index,
     pub end: Index,
+    pub context: MoveContext,
+    pub previous_ep_target: Option<Index>,
 }
 
 // A bitboard is a 64 bit number, and each bit indicates the presence or absence
@@ -50,6 +65,7 @@ pub type Bitboard = u64;
 // pieces.
 // Some data is redundant, but it should help calculating possible moves without
 // looking for each piece manually.
+#[derive(Clone, Copy)]
 pub struct Board
 {
     // White pieces positions by type.
@@ -73,6 +89,10 @@ pub struct Board
     pub black_pieces: Bitboard,
     pub pieces: Bitboard,
 
+    // Squares attacked by the side that played last.
+    // This is used to detect checking.
+    pub attacked_squares: Bitboard,
+
     // When a pawn moves 2 tiles, it can be taken using the 'en passant' rule.
     // There can only be one at a time, so we don't need a bitboard.
     // There can also be zero, so the index can be None.
@@ -94,6 +114,366 @@ impl Board
     pub fn get_legal_moves(&self) -> Vec<Move>
     {
         return get_legal_moves(self);
+    }
+
+    // Apply a move a update the board data.
+    pub fn make_move(&mut self, mv: Move)
+    {
+        let from = mv.start;
+        let to = mv.end;
+        let from_mask = 1u64 << from;
+        let to_mask = 1u64 << to;
+
+        if self.white_to_play
+        {
+            // Update white pieces position by removing the 'from' bit and adding the 'to' bit.
+            self.white_pieces = (self.white_pieces & !from_mask) | to_mask;
+
+            // Update the bitboard corresponding to the piece that was moved.
+            if self.white_pawns & from_mask != 0
+            {
+                self.white_pawns = (self.white_pawns & !from_mask) | to_mask;
+            }
+            else if self.white_rooks & from_mask != 0
+            {
+                // Rook moved from A1, so white loses its queen side castling right.
+                if from == 0
+                {
+                    self.white_queen_side_castling_right = false;
+                }
+                // Rook moved from H1, so white loses its king side castling right.
+                else if from == 7
+                {
+                    self.white_king_side_castling_right = false;
+                }
+                self.white_rooks = (self.white_rooks & !from_mask) | to_mask;
+            }
+            else if self.white_knights & from_mask != 0
+            {
+                self.white_knights = (self.white_knights & !from_mask) | to_mask;
+            }
+            else if self.white_bishops & from_mask != 0
+            {
+                self.white_bishops = (self.white_bishops & !from_mask) | to_mask;
+            }
+            else if self.white_queens & from_mask != 0
+            {
+                self.white_queens = (self.white_queens & !from_mask) | to_mask;
+            }
+            else if self.white_king == from
+            {
+                // The king moved, so white loses all its castling rights.
+                self.white_king_side_castling_right = false;
+                self.white_queen_side_castling_right = false;
+                self.white_king = to;
+            }
+            else
+            {
+                panic!("make_move: no white piece on {}.", from);
+            }
+
+            // Update black bitboards to apply the potential capture.
+            if let MoveContext::Capture(piece_type) = mv.context
+            {
+                self.black_pieces &= !to_mask;
+                match piece_type
+                {
+                    PAWN => self.black_pawns &= !to_mask,
+                    ROOK => self.black_rooks &= !to_mask,
+                    KNIGHT => self.black_knights &= !to_mask,
+                    BISHOP => self.black_bishops &= !to_mask,
+                    QUEEN => self.black_queens &= !to_mask,
+                    _ =>
+                    {},
+                }
+            }
+            // If the move is an en passant capture, the black pawn must be deleted.
+            else if mv.context == MoveContext::EnPassant
+            {
+                let cap_sq = to - 8;
+                let cap_mask = 1u64 << cap_sq;
+                self.black_pieces &= !cap_mask;
+                self.black_pawns &= !cap_mask;
+            }
+
+            // Set the en passant target.
+            self.en_passant_target =
+                if mv.context == MoveContext::DoubleStep { Some(to - 8) } else { None };
+        }
+        else
+        {
+            // Update black pieces position by removing the 'from' bit and adding the 'to' bit.
+            self.black_pieces = (self.black_pieces & !from_mask) | to_mask;
+
+            // Update the bitboard corresponding to the piece that was moved.
+            if self.black_pawns & from_mask != 0
+            {
+                self.black_pawns = (self.black_pawns & !from_mask) | to_mask;
+            }
+            else if self.black_rooks & from_mask != 0
+            {
+                // Rook moved from A8, so black loses its queen side castling right.
+                if from == 56
+                {
+                    self.black_queen_side_castling_right = false;
+                }
+                // Rook moved from H8, so black loses its king side castling right.
+                else if from == 63
+                {
+                    self.black_king_side_castling_right = false;
+                }
+                self.black_rooks = (self.black_rooks & !from_mask) | to_mask;
+            }
+            else if self.black_knights & from_mask != 0
+            {
+                self.black_knights = (self.black_knights & !from_mask) | to_mask;
+            }
+            else if self.black_bishops & from_mask != 0
+            {
+                self.black_bishops = (self.black_bishops & !from_mask) | to_mask;
+            }
+            else if self.black_queens & from_mask != 0
+            {
+                self.black_queens = (self.black_queens & !from_mask) | to_mask;
+            }
+            else if self.black_king == from
+            {
+                // The king moved, so white loses all its castling rights.
+                self.black_king_side_castling_right = false;
+                self.black_queen_side_castling_right = false;
+                self.black_king = to;
+            }
+            else
+            {
+                panic!("make_move: no black piece on {}.", from);
+            }
+            // Update white bitboards to apply the potential capture.
+            if let MoveContext::Capture(piece_type) = mv.context
+            {
+                self.white_pieces &= !to_mask;
+                match piece_type
+                {
+                    PAWN => self.white_pawns &= !to_mask,
+                    ROOK => self.white_rooks &= !to_mask,
+                    KNIGHT => self.white_knights &= !to_mask,
+                    BISHOP => self.white_bishops &= !to_mask,
+                    QUEEN => self.white_queens &= !to_mask,
+                    _ =>
+                    {},
+                }
+            }
+            // If the move is an en passant capture, the white pawn must be deleted.
+            if mv.context == MoveContext::EnPassant
+            {
+                let cap_sq = to + 8;
+                let cap_mask = 1u64 << cap_sq;
+                self.white_pieces &= !cap_mask;
+                self.white_pawns &= !cap_mask;
+            }
+
+            // Set the en passant target.
+            self.en_passant_target =
+                if mv.context == MoveContext::DoubleStep { Some(to + 8) } else { None };
+        }
+
+        // Update the global piece bitboard using the sided bitboards.
+        self.pieces = self.white_pieces | self.black_pieces;
+
+        // Update the attacked squares bitboard to detect checks and forbidden moves.
+        self.attacked_squares = get_attacked_squares(self);
+
+        self.white_to_play = !self.white_to_play;
+    }
+
+    // Go back to the previous state of the board, before the move was applied.
+    pub fn unmake_move(&mut self, mv: Move)
+    {
+        let from = mv.start;
+        let to = mv.end;
+        let from_mask = 1u64 << from;
+        let to_mask = 1u64 << to;
+
+        // Flip the playing side.
+        self.white_to_play = !self.white_to_play;
+
+        // Store the piece type on the destination square.
+        let moved_piece_type;
+
+        // Undo the move.
+        if self.white_to_play
+        {
+            // Remove the white piece in 'to' square, add it back to 'from' square.
+            if self.white_pawns & to_mask != 0
+            {
+                moved_piece_type = PAWN;
+                self.white_pawns &= !to_mask;
+            }
+            else if self.white_rooks & to_mask != 0
+            {
+                moved_piece_type = ROOK;
+                self.white_rooks &= !to_mask;
+            }
+            else if self.white_knights & to_mask != 0
+            {
+                moved_piece_type = KNIGHT;
+                self.white_knights &= !to_mask;
+            }
+            else if self.white_bishops & to_mask != 0
+            {
+                moved_piece_type = BISHOP;
+                self.white_bishops &= !to_mask;
+            }
+            else if self.white_queens & to_mask != 0
+            {
+                moved_piece_type = QUEEN;
+                self.white_queens &= !to_mask;
+            }
+            else if self.white_king == to
+            {
+                moved_piece_type = KING;
+                self.white_king = from;
+            }
+            else
+            {
+                panic!("unmake_move: no white piece on to={}", to);
+            }
+            self.white_pieces &= !to_mask;
+
+            // Restore any captured black piece.
+            match mv.context
+            {
+                MoveContext::Capture(piece) =>
+                {
+                    // Normal capture: put it back on 'to'.
+                    let bm = to_mask;
+                    self.black_pieces |= bm;
+                    match piece
+                    {
+                        PAWN => self.black_pawns |= bm,
+                        ROOK => self.black_rooks |= bm,
+                        KNIGHT => self.black_knights |= bm,
+                        BISHOP => self.black_bishops |= bm,
+                        QUEEN => self.black_queens |= bm,
+                        KING => self.black_king = to,
+                        _ => unreachable!(),
+                    }
+                },
+                MoveContext::EnPassant =>
+                {
+                    // En passant: captured pawn was behind 'to'.
+                    let cap_sq = to - 8;
+                    let cap_mask = 1u64 << cap_sq;
+                    self.black_pawns |= cap_mask;
+                    self.black_pieces |= cap_mask;
+                },
+                _ =>
+                {},
+            }
+
+            // Restore the white piece back to 'from'.
+            match moved_piece_type
+            {
+                PAWN => self.white_pawns |= from_mask,
+                ROOK => self.white_rooks |= from_mask,
+                KNIGHT => self.white_knights |= from_mask,
+                BISHOP => self.white_bishops |= from_mask,
+                QUEEN => self.white_queens |= from_mask,
+                KING => self.white_king = from,
+                _ => unreachable!(),
+            }
+            self.white_pieces |= from_mask;
+        }
+        // Black made the move:
+        else
+        {
+            // Remove the black piece in 'to' square, add it back to 'from' square.
+            if self.black_pawns & to_mask != 0
+            {
+                moved_piece_type = PAWN;
+                self.black_pawns &= !to_mask;
+            }
+            else if self.black_rooks & to_mask != 0
+            {
+                moved_piece_type = ROOK;
+                self.black_rooks &= !to_mask;
+            }
+            else if self.black_knights & to_mask != 0
+            {
+                moved_piece_type = KNIGHT;
+                self.black_knights &= !to_mask;
+            }
+            else if self.black_bishops & to_mask != 0
+            {
+                moved_piece_type = BISHOP;
+                self.black_bishops &= !to_mask;
+            }
+            else if self.black_queens & to_mask != 0
+            {
+                moved_piece_type = QUEEN;
+                self.black_queens &= !to_mask;
+            }
+            else if self.black_king == to
+            {
+                moved_piece_type = KING;
+                self.black_king = from;
+            }
+            else
+            {
+                panic!("unmake_move: no black piece on to={}", to);
+            }
+            self.black_pieces &= !to_mask;
+
+            // Restore any captured white piece.
+            match mv.context
+            {
+                MoveContext::Capture(piece) =>
+                {
+                    // Normal capture: put it back on 'to'.
+                    let wm = to_mask;
+                    self.white_pieces |= wm;
+                    match piece
+                    {
+                        PAWN => self.white_pawns |= wm,
+                        ROOK => self.white_rooks |= wm,
+                        KNIGHT => self.white_knights |= wm,
+                        BISHOP => self.white_bishops |= wm,
+                        QUEEN => self.white_queens |= wm,
+                        KING => self.white_king = to,
+                        _ => unreachable!(),
+                    }
+                },
+                MoveContext::EnPassant =>
+                {
+                    // En passant: captured pawn was behind 'to'.
+                    let cap_sq = to + 8;
+                    let cap_mask = 1u64 << cap_sq;
+                    self.white_pawns |= cap_mask;
+                    self.white_pieces |= cap_mask;
+                },
+                _ =>
+                {},
+            }
+
+            // Restore the black piece back to 'from'.
+            match moved_piece_type
+            {
+                PAWN => self.black_pawns |= from_mask,
+                ROOK => self.black_rooks |= from_mask,
+                KNIGHT => self.black_knights |= from_mask,
+                BISHOP => self.black_bishops |= from_mask,
+                QUEEN => self.black_queens |= from_mask,
+                KING => self.black_king = from,
+                _ => unreachable!(),
+            }
+            self.black_pieces |= from_mask;
+        }
+
+        // Restore previous en_passant_target.
+        self.en_passant_target = mv.previous_ep_target;
+
+        // Rebuild global occupancy and attacked squares.
+        self.pieces = self.white_pieces | self.black_pieces;
+        self.attacked_squares = get_attacked_squares(self);
     }
 
     // Create a new Board from a FEN string.
@@ -279,6 +659,8 @@ impl Board
             black_pieces,
             pieces: all_pieces,
 
+            attacked_squares: 0u64,
+
             en_passant_target,
 
             white_queen_side_castling_right: wqs,
@@ -361,6 +743,144 @@ impl Board
             println!();
         }
     }
+
+    // Convert a move into Standard Algebraic Notation (SAN).
+    pub fn to_san(&self, mv: Move) -> String
+    {
+        // Helper: index -> square name.
+        fn idx_to_coord(idx: usize) -> String
+        {
+            let file = (b'a' + (idx % 8) as u8) as char;
+            let rank = (1 + idx / 8).to_string();
+            format!("{}{}", file, rank)
+        }
+
+        // Detect piece type moved.
+        let piece = self.piece_at(mv.start);
+        // Map to letter.
+        let piece_char = match piece
+        {
+            PAWN => "",
+            KNIGHT => "N",
+            BISHOP => "B",
+            ROOK => "R",
+            QUEEN => "Q",
+            KING => "K",
+            _ => "",
+        };
+
+        // Destination coord.
+        let to_coord = idx_to_coord(mv.end);
+        // Origin coord (for pawn captures).
+        let from_coord = idx_to_coord(mv.start);
+
+        let mut san = String::new();
+        match mv.context
+        {
+            MoveContext::KingSideCastle => return "O-O".into(),
+            MoveContext::QueenSideCastle => return "O-O-O".into(),
+            _ =>
+            {},
+        }
+
+        // Is it a capture?
+        let is_capture = matches!(mv.context, MoveContext::Capture(_) | MoveContext::EnPassant);
+
+        // Build the SAN string.
+        if piece == PAWN && is_capture
+        {
+            // When a pawn captures a piece, its file is always indicated.
+            san.push(from_coord.chars().next().unwrap_or_default());
+            // Add the capture indicator.
+            san.push('x');
+        }
+        else
+        {
+            // TODO: disambiguating moves if pieces of the same type can move to the same square.
+
+            // Add the piece type indicator.
+            san.push_str(piece_char);
+            // Add the capture indicator.
+            if is_capture
+            {
+                san.push('x');
+            }
+        }
+
+        // Add the destination square.
+        san.push_str(&to_coord);
+
+        // TODO: check (+), checkmate (#).
+        return san;
+    }
+
+    fn piece_at(&self, sq: usize) -> Piece
+    {
+        return get_piece_type_on_square(self, sq);
+    }
+}
+
+pub fn get_piece_type_on_square(board: &Board, sq: usize) -> Piece
+{
+    let sq_bb = 1u64 << sq;
+    if board.white_pieces & sq_bb != 0
+    {
+        return if board.white_pawns & sq_bb != 0
+        {
+            PAWN
+        }
+        else if board.white_rooks & sq_bb != 0
+        {
+            ROOK
+        }
+        else if board.white_knights & sq_bb != 0
+        {
+            KNIGHT
+        }
+        else if board.white_bishops & sq_bb != 0
+        {
+            BISHOP
+        }
+        else if board.white_queens & sq_bb != 0
+        {
+            QUEEN
+        }
+        else
+        {
+            KING
+        };
+    }
+    else if board.black_pieces & sq_bb != 0
+    {
+        return if board.black_pawns & sq_bb != 0
+        {
+            PAWN
+        }
+        else if board.black_rooks & sq_bb != 0
+        {
+            ROOK
+        }
+        else if board.black_knights & sq_bb != 0
+        {
+            KNIGHT
+        }
+        else if board.black_bishops & sq_bb != 0
+        {
+            BISHOP
+        }
+        else if board.black_queens & sq_bb != 0
+        {
+            QUEEN
+        }
+        else
+        {
+            KING
+        };
+    }
+    else
+    {
+        return EMPTY;
+    }
 }
 
 // Print a bitboard as an 8x8 board (white perspective).
@@ -376,4 +896,66 @@ pub fn print_bb(bb: u64)
         println!();
     }
     println!();
+}
+
+// Explore every possible position after a certain amount of plies.
+// 1: 20; 2: 400; 3: 8902; etc.
+pub fn explore(board: &mut Board, max_depth: usize) -> usize
+{
+    if max_depth == 0
+    {
+        return 1;
+    }
+
+    let mut n = 0;
+    let moves = board.get_legal_moves();
+    for mv in moves.iter()
+    {
+        board.make_move(*mv);
+        n += explore(board, max_depth - 1);
+        board.unmake_move(*mv);
+    }
+
+    return n;
+}
+
+// Explore every possible position after a certain amount of plies, and print the tree of moves.
+pub fn explore_verbose(board: &mut Board, max_depth: usize, prefix: String) -> usize
+{
+    if max_depth == 0
+    {
+        return 1;
+    }
+
+    let mut n = 0;
+    let moves = board.get_legal_moves();
+    let count = moves.len();
+
+    for (i, mv) in moves.iter().enumerate()
+    {
+        let is_last = i == count - 1;
+
+        let branch = if is_last { "└── " } else { "├── " };
+        let child_prefix = if is_last { "    " } else { "│   " };
+
+        board.make_move(*mv);
+        let nb = explore(board, max_depth - 1);
+        board.unmake_move(*mv);
+
+        println!(
+            "{}{}{} {}",
+            prefix,
+            branch,
+            board.to_san(*mv),
+            if max_depth > 1 { format!("({})", nb) } else { "".into() }
+        );
+
+        board.make_move(*mv);
+        explore_verbose(board, max_depth - 1, prefix.clone() + child_prefix);
+        board.unmake_move(*mv);
+
+        n += nb;
+    }
+
+    return n;
 }
