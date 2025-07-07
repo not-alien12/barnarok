@@ -1,4 +1,7 @@
-use crate::{Bitboard, Board, Move, MoveContext, get_piece_type_on_square, is_king_attacked};
+use crate::{
+    BISHOP, Bitboard, Board, KNIGHT, Move, MoveContext, QUEEN, ROOK, get_piece_type_on_square,
+    is_king_attacked,
+};
 
 // Generate legal moves for pawns.
 pub fn generate_pawn_attacks(board: &Board) -> Bitboard
@@ -81,7 +84,7 @@ pub fn generate_pawn_attacks(board: &Board) -> Bitboard
 }
 
 // Generate legal moves for pawns.
-pub fn generate_pawn_moves(board: &Board) -> Vec<Move>
+pub fn generate_pawn_moves(board: &mut Board) -> Vec<Move>
 {
     // Create a vector representing legal moves for pawns.
     let mut moves = Vec::new();
@@ -177,12 +180,12 @@ pub fn generate_pawn_moves(board: &Board) -> Vec<Move>
 
             // Create a bitboard representing a potential pawn that could take the target white pawn
             // from the right.
-            let ep_from_right = ((bp & RANK_4 & !FILE_A) >> 7) & ep_bb;
+            let ep_from_right = ((bp & RANK_4 & !FILE_H) >> 7) & ep_bb;
             bitboard_to_moves(board, ep_from_right, -7, &mut moves, true);
 
             // Create a bitboard representing a potential pawn that could take the target white pawn
             // from the left.
-            let ep_from_left = ((bp & RANK_4 & !FILE_H) >> 9) & ep_bb;
+            let ep_from_left = ((bp & RANK_4 & !FILE_A) >> 9) & ep_bb;
             bitboard_to_moves(board, ep_from_left, -9, &mut moves, true);
         }
     }
@@ -192,7 +195,13 @@ pub fn generate_pawn_moves(board: &Board) -> Vec<Move>
 
 // For a given move type (represented by a shift value), and a given destination bitboard,
 // this helper creates a move and adds it to a vector.
-fn bitboard_to_moves(board: &Board, to_bb: Bitboard, shift: isize, out: &mut Vec<Move>, ep: bool)
+fn bitboard_to_moves(
+    board: &mut Board,
+    to_bb: Bitboard,
+    shift: isize,
+    out: &mut Vec<Move>,
+    ep: bool,
+)
 {
     // Copy the bitboard to a mutable value.
     let mut bits = to_bb;
@@ -205,41 +214,76 @@ fn bitboard_to_moves(board: &Board, to_bb: Bitboard, shift: isize, out: &mut Vec
         // This index is that of a square that a piece can go to.
         let to = bits.trailing_zeros() as usize;
         let to_mask = 1u64 << to;
-        let ctx = if (enemy & to_mask) != 0
-        {
-            MoveContext::Capture(get_piece_type_on_square(board, to))
-        }
-        else
-        {
-            MoveContext::None
-        };
+
         // Get the index of the square the moving piece is currently on, using the shift
         // value passed for each move type.
         let from = ((to as isize) - shift) as usize;
-        // Create a temporary copy of the board to test the validity of the move.
-        let mut temp = board.clone();
-        let mv = Move {
-            start: from,
-            end: to,
-            context: if ep
-            {
-                MoveContext::EnPassant
-            }
-            else if shift == -16 || shift == 16
-            {
-                MoveContext::DoubleStep
-            }
-            else
-            {
-                ctx
-            },
-            previous_ep_target: board.en_passant_target,
-        };
-        temp.make_move(mv);
-        // Add the move only if the king is not in check.
-        if !is_king_attacked(&temp, false)
+
+        // Get the potential captured piece.
+        let capture =
+            if enemy & to_mask != 0 { Some(get_piece_type_on_square(board, to)) } else { None };
+
+        // Add the promoting moves if necessary.
+        if to > 55 || to < 8
         {
-            out.push(mv);
+            // For each piece the pawn can promote to:
+            for p in vec![BISHOP, ROOK, KNIGHT, QUEEN].iter()
+            {
+                // Create a promoting move.
+                let mv = Move {
+                    start: from,
+                    end: to,
+                    context: MoveContext::Promotion(*p),
+                    previous_ep_target: board.en_passant_target,
+                    previous_wqs: board.white_queen_side_castling_right,
+                    previous_wks: board.white_king_side_castling_right,
+                    previous_bqs: board.black_queen_side_castling_right,
+                    previous_bks: board.black_king_side_castling_right,
+                    capture,
+                };
+
+                board.make_move(mv);
+                // Add the move only if the king is not in check.
+                if !is_king_attacked(&board, true)
+                {
+                    out.push(mv);
+                }
+                board.unmake_move(mv);
+            }
+        }
+        // Add the regular move if there is no promotion.
+        else
+        {
+            let mv = Move {
+                start: from,
+                end: to,
+                context: if ep
+                {
+                    MoveContext::EnPassant
+                }
+                else if shift == -16 || shift == 16
+                {
+                    MoveContext::DoubleStep
+                }
+                else
+                {
+                    MoveContext::None
+                },
+                previous_ep_target: board.en_passant_target,
+                previous_wqs: board.white_queen_side_castling_right,
+                previous_wks: board.white_king_side_castling_right,
+                previous_bqs: board.black_queen_side_castling_right,
+                previous_bks: board.black_king_side_castling_right,
+                capture,
+            };
+            
+            board.make_move(mv);
+            // Add the move only if the king is not in check.
+            if !is_king_attacked(&board, true)
+            {
+                out.push(mv);
+            }
+            board.unmake_move(mv);
         }
         // Remove the last bit of the bitboard.
         bits &= bits - 1;

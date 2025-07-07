@@ -44,7 +44,7 @@ pub fn generate_queen_attacks(board: &Board) -> Bitboard
 }
 
 // Create a vector containing moves that queens on the board can make.
-pub fn generate_queen_moves_hq(board: &Board) -> Vec<Move>
+pub fn generate_queen_moves_hq(board: &mut Board) -> Vec<Move>
 {
     let mut moves = Vec::new();
 
@@ -75,28 +75,34 @@ pub fn generate_queen_moves_hq(board: &Board) -> Vec<Move>
             // Get the target square index.
             let to = t.trailing_zeros() as usize;
             let to_mask = 1u64 << to;
-            let ctx = if (enemy & to_mask) != 0
-            {
-                MoveContext::Capture(get_piece_type_on_square(board, to))
-            }
-            else
-            {
-                MoveContext::None
-            };
-            // Create a temporary copy of the board to test the validity of the move.
-            let mut temp = board.clone();
+
+            // Create the move.
             let mv = Move {
                 start: from,
                 end: to,
-                context: ctx,
+                context: MoveContext::None,
                 previous_ep_target: board.en_passant_target,
+                previous_wqs: board.white_queen_side_castling_right,
+                previous_wks: board.white_king_side_castling_right,
+                previous_bqs: board.black_queen_side_castling_right,
+                previous_bks: board.black_king_side_castling_right,
+                capture: if enemy & to_mask != 0
+                {
+                    Some(get_piece_type_on_square(board, to))
+                }
+                else
+                {
+                    None
+                },
             };
-            temp.make_move(mv);
+            
+            board.make_move(mv);
             // Add the move only if the king is not in check.
-            if !is_king_attacked(&temp, false)
+            if !is_king_attacked(&board, true)
             {
                 moves.push(mv);
             }
+            board.unmake_move(mv);
             t &= t - 1;
         }
     }

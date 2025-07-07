@@ -208,7 +208,7 @@ const fn make_knight_masks() -> [Bitboard; 64]
 
         if file > 1
         {
-            if rank > 1
+            if rank > 0
             {
                 m |= 1u64 << (sq - 10);
             }
@@ -219,7 +219,7 @@ const fn make_knight_masks() -> [Bitboard; 64]
         }
         if file > 0
         {
-            if rank > 2
+            if rank > 1
             {
                 m |= 1u64 << (sq - 17);
             }
@@ -234,7 +234,7 @@ const fn make_knight_masks() -> [Bitboard; 64]
             {
                 m |= 1u64 << (sq + 10);
             }
-            if rank > 1
+            if rank > 0
             {
                 m |= 1u64 << (sq - 6);
             }
@@ -245,7 +245,7 @@ const fn make_knight_masks() -> [Bitboard; 64]
             {
                 m |= 1u64 << (sq + 17);
             }
-            if rank > 2
+            if rank > 1
             {
                 m |= 1u64 << (sq - 15);
             }
@@ -275,10 +275,10 @@ const fn make_king_masks() -> [Bitboard; 64]
 
         let mut m = 0u64;
 
-        if file > 1
+        if file > 0
         {
             m |= 1u64 << (sq - 1);
-            if rank > 1
+            if rank > 0
             {
                 m |= 1u64 << (sq - 9);
             }
@@ -290,7 +290,7 @@ const fn make_king_masks() -> [Bitboard; 64]
         if file < 7
         {
             m |= 1u64 << (sq + 1);
-            if rank > 1
+            if rank > 0
             {
                 m |= 1u64 << (sq - 7);
             }
@@ -299,7 +299,7 @@ const fn make_king_masks() -> [Bitboard; 64]
                 m |= 1u64 << (sq + 9);
             }
         }
-        if rank > 1
+        if rank > 0
         {
             m |= 1u64 << (sq - 8);
         }
