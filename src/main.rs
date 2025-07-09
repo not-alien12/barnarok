@@ -24,7 +24,9 @@ enum Commands
     Play
     {
         #[arg(short, long)]
-        side: String,
+        wstrat: String,
+        #[arg(short, long)]
+        bstrat: String,
     },
 }
 
@@ -36,19 +38,19 @@ fn main()
     {
         Commands::Run =>
         {
-            match Board::from_fen("rnb2bnr/pppppppp/8/3kq2R/8/5K2/PPPPPPPP/RNBQ1BN1 w - -")
+            match Board::from_fen("rnb2bnr/ppqppppp/8/3kq2R/8/5K2/PPPPPPPP/RNBQ1BN1 w - -")
             {
                 Ok(board) =>
                 {
                     board.display();
+                    println!("evaluation: {}", board.evaluate());
                 },
                 Err(err) => eprint!("{}", err),
             }
-            print_bb(knight_mask(11));
         },
         Commands::Explore { depth, verbose } =>
         {
-            match Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -")
+            match Board::from_fen("8/8/8/3q4/8/4Q3/8/4K2k w - -")
             {
                 Ok(mut board) =>
                 {
@@ -62,21 +64,15 @@ fn main()
                 Err(err) => eprint!("{}", err),
             }
         },
-        Commands::Play { side } =>
+        Commands::Play { wstrat, bstrat } => match play(*&wstrat.as_str(), *&bstrat.as_str())
         {
-            let is_white = if side == "w"
+            Ok(result) => match result
             {
-                true
-            }
-            else if side == "b"
-            {
-                false
-            }
-            else
-            {
-                panic!("This is not a valid side.")
-            };
-            play(is_white);
+                GameResult::White => println!("White wins by checkmate."),
+                GameResult::Black => println!("Black wins by checkmate."),
+                GameResult::Stalemate => println!("The game ends in a draw by checkmate."),
+            },
+            Err(err) => eprintln!("{}", err),
         },
     }
 }

@@ -4,48 +4,102 @@ use rand::seq::IndexedRandom;
 
 use super::*;
 
-pub fn play(player_is_white: bool)
+pub enum GameResult
 {
+    White,
+    Black,
+    Stalemate,
+}
+
+pub fn play(white_strategy_choice: &str, black_strategy_choice: &str)
+-> Result<GameResult, String>
+{
+    let white_strategy = match white_strategy_choice
+    {
+        "player" => player_strategy,
+        "random" => random_strategy,
+        "negamax" => negamax_strategy,
+        "alphabeta" => alpha_beta_strategy,
+        "alphabetaq" => alpha_beta_quiesce_strategy,
+        _ => return Err("The chosen white strategy is not valid.".into()),
+    };
+    let black_strategy = match black_strategy_choice
+    {
+        "player" => player_strategy,
+        "random" => random_strategy,
+        "negamax" => negamax_strategy,
+        "alphabeta" => alpha_beta_strategy,
+        "alphabetaq" => alpha_beta_quiesce_strategy,
+        _ => return Err("The chosen black strategy is not valid.".into()),
+    };
     match Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -")
     {
         Ok(mut board) =>
         {
-            let mut player_playing = player_is_white;
+            let mut game_result = GameResult::Stalemate;
             board.display();
             let mut n = 0;
-            while n < 50
+            while n < 500
             {
-                println!("=========");
-                if player_playing
+                if board.white_to_play
                 {
-                    match player_strategy(&mut board)
+                    println!("============================");
+                    match white_strategy(&mut board)
                     {
-                        1 => break,
-                        _ => (),
+                        Some(mv) =>
+                        {
+                            let mv_name = mv.to_uci();
+                            board.make_move(mv);
+                            board.display();
+                            println!("White played: {}", mv_name);
+                        },
+                        None =>
+                        {
+                            if is_king_attacked(&board, false)
+                            {
+                                game_result = GameResult::Black;
+                            }
+                            break;
+                        },
                     }
                 }
                 else
                 {
-                    match random_strategy(&mut board)
+                    println!("============================");
+                    match black_strategy(&mut board)
                     {
-                        1 => break,
-                        _ => (),
+                        Some(mv) =>
+                        {
+                            let mv_name = mv.to_uci();
+                            board.make_move(mv);
+                            board.display();
+                            println!("Black played: {}", mv_name);
+                            n += 1;
+                        },
+                        None =>
+                        {
+                            if is_king_attacked(&board, false)
+                            {
+                                game_result = GameResult::White;
+                            }
+                            break;
+                        },
                     }
                 }
-                player_playing = !player_playing;
-                n += 1;
             }
+            println!("The game ends after {} full moves.", n);
+            return Ok(game_result);
         },
-        Err(err) => eprintln!("{}", err),
+        Err(err) => return Err(err),
     }
 }
 
-fn player_strategy(board: &mut Board) -> u8
+fn player_strategy(board: &mut Board) -> Option<Move>
 {
     let moves = board.get_legal_moves();
     if moves.len() == 0
     {
-        return 1;
+        return None;
     }
     let mut dict = HashMap::new();
     for m in moves.iter()
@@ -62,25 +116,28 @@ fn player_strategy(board: &mut Board) -> u8
             .expect("Failed to read line");
         choice = choice.trim().to_string();
     }
-    board.make_move(**dict.get(&choice).unwrap());
-    return 0;
+    return Some(**dict.get(&choice).unwrap());
 }
 
-fn random_strategy(board: &mut Board) -> u8
+fn random_strategy(board: &mut Board) -> Option<Move>
 {
-    match board.get_legal_moves().choose(&mut rand::rng())
-    {
-        Some(mv) =>
-        {
-            let move_name = mv.to_uci();
-            board.make_move(*mv);
-            board.display();
-            println!("Move made: {}", move_name);
-            return 0;
-        },
-        None =>
-        {
-            return 1;
-        },
-    }
+    return board.get_legal_moves().choose(&mut rand::rng()).cloned();
+}
+
+fn negamax_strategy(board: &mut Board) -> Option<Move>
+{
+    let (_, result) = negamax(board, 4);
+    return result;
+}
+
+fn alpha_beta_strategy(board: &mut Board) -> Option<Move>
+{
+    let (_, result) = launch_alpha_beta(board, 4);
+    return result;
+}
+
+fn alpha_beta_quiesce_strategy(board: &mut Board) -> Option<Move>
+{
+    let (_, result) = launch_alpha_beta_quiesce(board, 4);
+    return result;
 }

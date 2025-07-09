@@ -591,6 +591,36 @@ impl Board
         self.black_king_side_castling_right = mv.previous_bks;
     }
 
+    pub fn evaluate(&self) -> i32
+    {
+        const PAWN_VALUE: u32 = 1;
+        const ROOK_VALUE: u32 = 5;
+        const KNIGHT_VALUE: u32 = 3;
+        const BISHOP_VALUE: u32 = 4;
+        const QUEEN_VALUE: u32 = 9;
+
+        let white_eval = PAWN_VALUE * self.white_pawns.count_ones()
+            + ROOK_VALUE * self.white_rooks.count_ones()
+            + KNIGHT_VALUE * self.white_knights.count_ones()
+            + BISHOP_VALUE * self.white_bishops.count_ones()
+            + QUEEN_VALUE * self.white_queens.count_ones();
+
+        let black_eval = PAWN_VALUE * self.black_pawns.count_ones()
+            + ROOK_VALUE * self.black_rooks.count_ones()
+            + KNIGHT_VALUE * self.black_knights.count_ones()
+            + BISHOP_VALUE * self.black_bishops.count_ones()
+            + QUEEN_VALUE * self.black_queens.count_ones();
+
+        return if self.white_to_play
+        {
+            white_eval as i32 - black_eval as i32
+        }
+        else
+        {
+            black_eval as i32 - white_eval as i32
+        };
+    }
+
     // Return a new board in the initial state.
     pub fn new() -> Result<Self, String>
     {
